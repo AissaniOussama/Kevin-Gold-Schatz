@@ -135,6 +135,18 @@
   }
   .drop-zone.has-image .remove-btn{ display:flex; }
   .drop-zone.has-image:hover .remove-btn{ opacity:1; }
+
+  #musicToggle{
+    position:fixed; right:22px; bottom:22px; z-index:20;
+    width:56px; height:56px; border-radius:50%;
+    background:#fff; border:2px solid var(--pink); color:var(--pink);
+    font-size:20px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    box-shadow: 0 8px 18px rgba(139,108,242,0.28);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  #musicToggle:hover{ transform: scale(1.08); box-shadow: 0 10px 22px rgba(139,108,242,0.4); }
+  #musicToggle:active{ transform: scale(0.94); }
 </style>
 </head>
 <body>
@@ -163,20 +175,25 @@
 <div class="gif-board" id="gifBoard"></div>
 <input type="file" id="filePicker" accept="image/*" style="display:none">
 <audio id="bgm" src="audio/mein-goldschatz.mp3" loop preload="auto"></audio>
+<button id="musicToggle" title="Musik An/Aus">▶</button>
 
 <script>
-// ---------- Background music (autoplay if allowed, else on first interaction) ----------
+// ---------- Background music, controlled by the toggle button ----------
 const bgm = document.getElementById('bgm');
+const musicToggle = document.getElementById('musicToggle');
 bgm.volume = 0.85;
-function tryPlayBgm(){
-  const p = bgm.play();
-  if(p && p.catch) p.catch(() => {
-    const resume = () => { bgm.play().catch(()=>{}); cleanup(); };
-    const cleanup = () => ['pointerdown','keydown','touchstart'].forEach(evt => window.removeEventListener(evt, resume));
-    ['pointerdown','keydown','touchstart'].forEach(evt => window.addEventListener(evt, resume, { once:true }));
-  });
-}
-tryPlayBgm();
+
+function updateToggleIcon(){ musicToggle.textContent = bgm.paused ? '▶' : '⏸'; }
+musicToggle.addEventListener('click', () => {
+  if(bgm.paused) bgm.play().catch(() => {});
+  else bgm.pause();
+});
+bgm.addEventListener('play', updateToggleIcon);
+bgm.addEventListener('pause', updateToggleIcon);
+updateToggleIcon();
+
+// best-effort autoplay; if the browser blocks it, the button still works
+bgm.play().catch(() => {});
 
 // ---------- Decorative sparkle stars ----------
 const sparkleLayer = document.getElementById('sparkles');
