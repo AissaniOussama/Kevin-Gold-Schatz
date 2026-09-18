@@ -102,39 +102,39 @@
     margin: 6px 0 0 0;
   }
 
-  /* ---------- Free-floating GIF stickers, no frame, drop anywhere ---------- */
+  /* ---------- Invisible GIF drop zones clustered around the heart ---------- */
   .gif-board{ position:fixed; inset:0; z-index:5; pointer-events:none; }
-  .drop-hint{
-    position:fixed; inset:0; z-index:4; pointer-events:none;
-    border: 4px dashed var(--pink);
-    opacity:0;
-    transition: opacity 0.15s ease;
-  }
-  .drop-hint.show{ opacity:0.6; }
-
-  .sticker{
+  .drop-zone{
     position:absolute;
-    width: clamp(200px, 30vw, 380px);
+    width: 190px; height:190px;
+    border-radius: 16px;
+    background: transparent;
+    border: 2px dashed transparent;
+    overflow:hidden;
     pointer-events:auto;
-    cursor:grab;
+    cursor:pointer;
     touch-action:none;
-    filter: drop-shadow(0 12px 20px rgba(0,0,0,0.28));
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
-  .sticker.grabbing{ cursor:grabbing; }
-  .sticker img{
-    width:100%; display:block; pointer-events:none;
-    -webkit-user-drag:none;
+  .drop-zone.drag-over{ border-color: rgba(255,111,165,0.7); background: rgba(255,255,255,0.35); }
+  .drop-zone.has-image{ cursor:grab; }
+  .drop-zone.has-image.grabbing{ cursor:grabbing; }
+  .drop-zone img{
+    width:100%; height:100%; object-fit:cover;
+    pointer-events:none; -webkit-user-drag:none;
+    filter: drop-shadow(0 10px 16px rgba(0,0,0,0.22));
   }
-  .sticker .remove-btn{
-    position:absolute; top:-10px; right:-10px;
-    width:26px; height:26px; border-radius:50%;
+  .drop-zone .remove-btn{
+    position:absolute; top:-8px; right:-8px;
+    width:24px; height:24px; border-radius:50%;
     background:#fff; border:2px solid var(--pink); color:var(--pink);
-    font-size:14px; font-weight:700; line-height:1;
-    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; line-height:1;
+    display:none; align-items:center; justify-content:center;
     cursor:pointer;
     opacity:0; transition:opacity 0.15s ease;
   }
-  .sticker:hover .remove-btn{ opacity:1; }
+  .drop-zone.has-image .remove-btn{ display:flex; }
+  .drop-zone.has-image:hover .remove-btn{ opacity:1; }
 </style>
 </head>
 <body>
@@ -161,7 +161,7 @@
 </div>
 
 <div class="gif-board" id="gifBoard"></div>
-<div class="drop-hint" id="dropHint"></div>
+<input type="file" id="filePicker" accept="image/*" style="display:none">
 
 <script>
 // ---------- Decorative sparkle stars ----------
@@ -203,67 +203,113 @@ function spawnHeart(){
 }
 setInterval(spawnHeart, 650);
 
-// ---------- Draggable / droppable GIF tiles ----------
-// ---------- Free-floating GIF stickers: drop anywhere on the page ----------
+// ---------- 4 invisible GIF drop zones clustered around the heart ----------
 const gifBoard = document.getElementById('gifBoard');
-const dropHint = document.getElementById('dropHint');
+const filePicker = document.getElementById('filePicker');
 let topZ = 10;
+let activeZone = null;
 
-function makeDraggable(el){
+// symmetric 2x2 cluster flanking the heart/title column
+const zoneLayout = [
+  { left: 'calc(50% - 340px)', top: 'calc(50% - 230px)' },
+  { left: 'calc(50% + 150px)', top: 'calc(50% - 230px)' },
+  { left: 'calc(50% - 340px)', top: 'calc(50% + 40px)'  },
+  { left: 'calc(50% + 150px)', top: 'calc(50% + 40px)'  }
+];
+
+function extractImageUrl(dataTransfer){
+  const uriList = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain') || dataTransfer.getData('URL');
+  if(uriList && /^https?:\/\//i.test(uriList.trim())) return uriList.trim().split('\n')[0];
+  const html = dataTransfer.getData('text/html');
+  if(html){
+    const m = html.match(/<img[^>]+src="([^"]+)"/i);
+    if(m) return m[1];
+  }
+  return null;
+}
+
+function setZoneImage(zone, src){
+  let img = zone.querySelector('img');
+  if(!img){ img = document.createElement('img'); img.alt = 'gif'; zone.insertBefore(img, zone.firstChild); }
+  img.src = src;
+  zone.classList.add('has-image');
+}
+
+function makeDraggable(zone){
   let dragging = false, offsetX = 0, offsetY = 0;
-  el.addEventListener('pointerdown', e => {
+  zone.addEventListener('pointerdown', e => {
+    if(!zone.classList.contains('has-image')) return;
     if(e.target.closest('.remove-btn')) return;
     dragging = true;
-    el.setPointerCapture(e.pointerId);
-    const rect = el.getBoundingClientRect();
+    zone.setPointerCapture(e.pointerId);
+    const rect = zone.getBoundingClientRect();
     offsetX = e.clientX - rect.left;
     offsetY = e.clientY - rect.top;
-    el.classList.add('grabbing');
-    el.style.zIndex = ++topZ;
+    zone.classList.add('grabbing');
+    zone.style.zIndex = ++topZ;
   });
-  el.addEventListener('pointermove', e => {
+  zone.addEventListener('pointermove', e => {
     if(!dragging) return;
-    el.style.left = (e.clientX - offsetX) + 'px';
-    el.style.top = (e.clientY - offsetY) + 'px';
+    zone.style.left = (e.clientX - offsetX) + 'px';
+    zone.style.top = (e.clientY - offsetY) + 'px';
   });
-  ['pointerup','pointercancel'].forEach(evt => el.addEventListener(evt, () => {
+  ['pointerup','pointercancel'].forEach(evt => zone.addEventListener(evt, () => {
     dragging = false;
-    el.classList.remove('grabbing');
+    zone.classList.remove('grabbing');
   }));
 }
 
-function addSticker(src, dropX, dropY){
-  const el = document.createElement('div');
-  el.className = 'sticker';
-  el.style.left = dropX + 'px';
-  el.style.top = dropY + 'px';
-  el.style.zIndex = ++topZ;
-  el.innerHTML = `<img src="${src}" draggable="false" alt="sticker"><button class="remove-btn" title="entfernen">✕</button>`;
-  gifBoard.appendChild(el);
-  makeDraggable(el);
-  el.querySelector('.remove-btn').addEventListener('click', e => {
-    e.stopPropagation();
-    el.remove();
-  });
-  // center the sticker under the drop point once we know its real size
-  requestAnimationFrame(() => {
-    const r = el.getBoundingClientRect();
-    el.style.left = (dropX - r.width/2) + 'px';
-    el.style.top = (dropY - r.height/2) + 'px';
-  });
-}
+zoneLayout.forEach(pos => {
+  const zone = document.createElement('div');
+  zone.className = 'drop-zone';
+  zone.style.left = pos.left;
+  zone.style.top = pos.top;
+  zone.innerHTML = `<button class="remove-btn" title="entfernen">✕</button>`;
+  gifBoard.appendChild(zone);
+  makeDraggable(zone);
 
-window.addEventListener('dragover', e => { e.preventDefault(); dropHint.classList.add('show'); });
-window.addEventListener('dragleave', e => { if(e.target === document.documentElement) dropHint.classList.remove('show'); });
-window.addEventListener('drop', e => {
-  e.preventDefault();
-  dropHint.classList.remove('show');
-  const file = e.dataTransfer.files && e.dataTransfer.files[0];
-  if(!file || !file.type.startsWith('image/')) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file && file.type.startsWith('image/')){
+      const reader = new FileReader();
+      reader.onload = ev => setZoneImage(zone, ev.target.result);
+      reader.readAsDataURL(file);
+      return;
+    }
+    const url = extractImageUrl(e.dataTransfer);
+    if(url) setZoneImage(zone, url);
+  });
+
+  // click an empty zone to pick a file instead (in case native drag&drop isn't cooperating)
+  zone.addEventListener('click', () => {
+    if(zone.classList.contains('has-image')) return;
+    activeZone = zone;
+    filePicker.click();
+  });
+
+  zone.querySelector('.remove-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    const img = zone.querySelector('img');
+    if(img) img.remove();
+    zone.classList.remove('has-image');
+  });
+});
+
+filePicker.addEventListener('change', () => {
+  const file = filePicker.files && filePicker.files[0];
+  filePicker.value = '';
+  if(!file || !activeZone) return;
   const reader = new FileReader();
-  reader.onload = ev => addSticker(ev.target.result, e.clientX, e.clientY);
+  reader.onload = ev => setZoneImage(activeZone, ev.target.result);
   reader.readAsDataURL(file);
 });
+
+// don't let a dropped file navigate the whole page if it misses a zone
+['dragover','drop'].forEach(evt => window.addEventListener(evt, e => e.preventDefault()));
 </script>
 </body>
 </html>
