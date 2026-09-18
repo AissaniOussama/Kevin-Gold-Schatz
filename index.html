@@ -162,8 +162,22 @@
 
 <div class="gif-board" id="gifBoard"></div>
 <input type="file" id="filePicker" accept="image/*" style="display:none">
+<audio id="bgm" src="audio/mein-goldschatz.mp3" loop preload="auto"></audio>
 
 <script>
+// ---------- Background music (autoplay if allowed, else on first interaction) ----------
+const bgm = document.getElementById('bgm');
+bgm.volume = 0.85;
+function tryPlayBgm(){
+  const p = bgm.play();
+  if(p && p.catch) p.catch(() => {
+    const resume = () => { bgm.play().catch(()=>{}); cleanup(); };
+    const cleanup = () => ['pointerdown','keydown','touchstart'].forEach(evt => window.removeEventListener(evt, resume));
+    ['pointerdown','keydown','touchstart'].forEach(evt => window.addEventListener(evt, resume, { once:true }));
+  });
+}
+tryPlayBgm();
+
 // ---------- Decorative sparkle stars ----------
 const sparkleLayer = document.getElementById('sparkles');
 const sparkleGlyphs = ['✦','✧','⭐','💫'];
@@ -259,7 +273,7 @@ function makeDraggable(zone){
   }));
 }
 
-zoneLayout.forEach(pos => {
+zoneLayout.forEach((pos, i) => {
   const zone = document.createElement('div');
   zone.className = 'drop-zone';
   zone.style.left = pos.left;
@@ -267,6 +281,12 @@ zoneLayout.forEach(pos => {
   zone.innerHTML = `<button class="remove-btn" title="entfernen">✕</button>`;
   gifBoard.appendChild(zone);
   makeDraggable(zone);
+
+  // auto-fill from dancing/1.gif .. dancing/4.gif, if present
+  const autoSrc = `dancing/${i + 1}.gif`;
+  const probe = new Image();
+  probe.onload = () => setZoneImage(zone, autoSrc);
+  probe.src = autoSrc;
 
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
